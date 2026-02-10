@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git config:*)",
+      "Bash(git ls-tree:*)",
+      "WebSearch",
+      "WebFetch(domain:milkdown.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm ls:*)"
+    ]
+  }
+}
