@@ -53,7 +53,7 @@ export function MilkdownEditor({ initialValue, onChange }: Props) {
       crepe.destroy();
       crepeRef.current = null;
     };
-  }, [initialValue]);
+  }, []);
 
   return (
     <div
