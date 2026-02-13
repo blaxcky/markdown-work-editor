@@ -16,6 +16,9 @@ export function EditorArea() {
   const setMode = useEditorStore((s) => s.setMode);
   const currentContent = useEditorStore((s) => s.currentContent);
   const setCurrentContent = useEditorStore((s) => s.setCurrentContent);
+  const currentContentByFileId = useEditorStore((s) => s.currentContentByFileId);
+  const setCurrentFileContent = useEditorStore((s) => s.setCurrentFileContent);
+  const hydrateFileContent = useEditorStore((s) => s.hydrateFileContent);
   const setDirty = useEditorStore((s) => s.setDirty);
   const setWordCount = useEditorStore((s) => s.setWordCount);
   const setCharCount = useEditorStore((s) => s.setCharCount);
@@ -25,6 +28,7 @@ export function EditorArea() {
 
   const activeFile = files.find((f) => f.id === activeFileId);
   const prevFileIdRef = useRef<string | null>(null);
+  const isSyncingRef = useRef(false);
 
   const updateCounts = useCallback(
     (text: string) => {
@@ -35,29 +39,64 @@ export function EditorArea() {
     [setWordCount, setCharCount]
   );
 
+  // Keep drafts hydrated from persisted file contents.
+  useEffect(() => {
+    for (const file of files) {
+      hydrateFileContent(file.id, file.content);
+    }
+  }, [files, hydrateFileContent]);
+
   // Load file content when active file changes
   useEffect(() => {
-    if (activeFileId !== prevFileIdRef.current) {
-      // Flush previous file's changes
-      if (prevFileIdRef.current) {
-        void flush({ fileId: prevFileIdRef.current, content: currentContent });
+    if (activeFileId === prevFileIdRef.current) return;
+
+    const syncActiveFile = async () => {
+      isSyncingRef.current = true;
+
+      const prevFileId = prevFileIdRef.current;
+      if (prevFileId) {
+        const previousDraft = useEditorStore.getState().currentContentByFileId[prevFileId];
+        if (previousDraft !== undefined) {
+          await flush({ fileId: prevFileId, content: previousDraft });
+        }
       }
+
       prevFileIdRef.current = activeFileId;
-      if (activeFile) {
-        setCurrentContent(activeFile.content);
+      if (activeFile && activeFileId) {
+        const currentDraft = useEditorStore.getState().currentContentByFileId[activeFileId] ?? activeFile.content;
+        setCurrentFileContent(activeFileId, currentDraft);
         setDirty(false);
-        updateCounts(activeFile.content);
+        updateCounts(currentDraft);
       }
+
+      isSyncingRef.current = false;
+    };
+
+    void syncActiveFile();
+
+    return () => {
+      isSyncingRef.current = true;
+    };
+  }, [activeFileId, activeFile, flush, setCurrentFileContent, setDirty, updateCounts]);
+
+  const editorValue = activeFileId
+    ? currentContentByFileId[activeFileId] ?? activeFile?.content ?? ''
+    : '';
+
+  useEffect(() => {
+    if (activeFileId && editorValue !== currentContent) {
+      setCurrentContent(editorValue);
     }
-  }, [activeFileId, activeFile, currentContent, flush, setCurrentContent, setDirty, updateCounts]);
+  }, [activeFileId, currentContent, editorValue, setCurrentContent]);
 
   const handleContentChange = useCallback(
     (newContent: string) => {
-      setCurrentContent(newContent);
+      if (!activeFileId || isSyncingRef.current) return;
+      setCurrentContent(newContent, activeFileId);
       setDirty(true);
       updateCounts(newContent);
     },
-    [setCurrentContent, setDirty, updateCounts]
+    [activeFileId, setCurrentContent, setDirty, updateCounts]
   );
 
   const handleModeChange = useCallback(
@@ -80,12 +119,12 @@ export function EditorArea() {
         {mode === 'wysiwyg' ? (
           <MilkdownEditor
             key={activeFileId}
-            initialValue={currentContent}
+            initialValue={editorValue}
             onChange={handleContentChange}
           />
         ) : (
           <SourceEditor
-            value={currentContent}
+            value={editorValue}
             onChange={handleContentChange}
           />
         )}
