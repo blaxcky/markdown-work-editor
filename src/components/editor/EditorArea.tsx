@@ -25,39 +25,57 @@ export function EditorArea() {
 
   const activeFile = files.find((f) => f.id === activeFileId);
   const prevFileIdRef = useRef<string | null>(null);
+  const draftsByFileRef = useRef<Record<string, string>>({});
 
   const updateCounts = useCallback(
     (text: string) => {
+      setCharCount(text.length);
       const trimmed = text.trim();
       setWordCount(trimmed ? trimmed.split(/\s+/).length : 0);
-      setCharCount(text.length);
     },
-    [setWordCount, setCharCount]
+    [setCharCount, setWordCount]
   );
+
+  // Avoid expensive whole-document word counting on every single key press.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateCounts(currentContent);
+    }, 120);
+
+    return () => clearTimeout(timer);
+  }, [currentContent, updateCounts]);
 
   // Load file content when active file changes
   useEffect(() => {
     if (activeFileId !== prevFileIdRef.current) {
+      const previousFileId = prevFileIdRef.current;
+
       // Flush previous file's changes
-      if (prevFileIdRef.current) {
-        void flush({ fileId: prevFileIdRef.current, content: currentContent });
+      if (previousFileId) {
+        const previousDraft = draftsByFileRef.current[previousFileId] ?? currentContent;
+        void flush({ fileId: previousFileId, content: previousDraft });
       }
+
       prevFileIdRef.current = activeFileId;
       if (activeFile) {
-        setCurrentContent(activeFile.content);
+        const currentDraft = draftsByFileRef.current[activeFile.id] ?? activeFile.content;
+        draftsByFileRef.current[activeFile.id] = currentDraft;
+        setCurrentContent(currentDraft);
         setDirty(false);
-        updateCounts(activeFile.content);
       }
     }
-  }, [activeFileId, activeFile, currentContent, flush, setCurrentContent, setDirty, updateCounts]);
+  }, [activeFileId, activeFile, currentContent, flush, setCurrentContent, setDirty]);
 
   const handleContentChange = useCallback(
     (newContent: string) => {
+      const fileId = useWorkspaceStore.getState().activeFileId;
+      if (fileId) {
+        draftsByFileRef.current[fileId] = newContent;
+      }
       setCurrentContent(newContent);
       setDirty(true);
-      updateCounts(newContent);
     },
-    [setCurrentContent, setDirty, updateCounts]
+    [setCurrentContent, setDirty]
   );
 
   const handleModeChange = useCallback(
@@ -80,7 +98,7 @@ export function EditorArea() {
         {mode === 'wysiwyg' ? (
           <MilkdownEditor
             key={activeFileId}
-            initialValue={currentContent}
+            initialValue={draftsByFileRef.current[activeFile.id] ?? activeFile.content}
             onChange={handleContentChange}
           />
         ) : (
